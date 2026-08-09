@@ -9,7 +9,7 @@ isn't a separate AI — whatever connectors and skills you've already set up
 Claude Code is doing the work and this is a face on it.
 
 ```bash
-git clone https://github.com/YOUR-USERNAME/jarvis-os.git
+git clone https://github.com/Itsme23476/jarvis-os.git
 cd jarvis-os
 cp .env.example .env      # add your ElevenLabs key
 ./start.sh
