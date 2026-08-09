@@ -52,8 +52,17 @@ def speak(text):
             "xi-api-key": os.environ["ELEVENLABS_API_KEY"],
         },
     )
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return r.read()
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.read()
+    except urllib.error.HTTPError as e:
+        # Surface the real reason (quota, bad key, bad voice id) instead of a
+        # bare status code — the UI uses this to decide whether to fall back.
+        try:
+            body = e.read().decode("utf-8", "replace")[:300]
+        except Exception:                              # noqa: BLE001
+            body = ""
+        raise RuntimeError(f"{e.code} {body}") from None
 
 
 def transcribe(audio, mime="audio/webm"):

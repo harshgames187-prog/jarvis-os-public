@@ -180,28 +180,74 @@ let floorSum=0, floorN=0, threshold=0.02, peak=0, calibrating=true;
 const SILENCE=900, MIN_TURN_MS=350, MAX_TURN_MS=18000, NO_SPEECH_MS=7000;
 
 // ── voice out ──
-let muted = false, player = null;
-function speak(text){
+let muted = false, player = null, ttsDown = false;
+
+/* Fallback voice: the browser's own speech synthesis. Free, unlimited, always
+   available. Used whenever ElevenLabs can't deliver — out of quota, network
+   blip, bad key — so Jarvis is never silently mute. */
+function browserSpeak(text){
   return new Promise(resolve => {
-    text = (text||'').trim();
-    if (muted || !RT.tts || !text) return resolve();
-    suppress = true;                                  // go deaf before audio starts
-    const spoken = text.length > 700 ? text.slice(0, 680).replace(/\s+\S*$/,'') + '…' : text;
-    fetch('/api/speak', {method:'POST', headers:{'content-type':'application/json'},
-                         body: JSON.stringify({text:spoken})})
-      .then(r => r.ok ? r.blob() : Promise.reject())
-      .then(blob => {
-        const url = URL.createObjectURL(blob);
-        if (player) player.pause();
-        player = new Audio(url);
-        document.body.classList.add('speaking');
-        const done = () => { document.body.classList.remove('speaking');
-          URL.revokeObjectURL(url); resolve(); };
-        player.onended = done; player.onerror = done;
-        return player.play();
-      })
-      .catch(() => resolve());
+    if (!window.speechSynthesis) return resolve();
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    const v = speechSynthesis.getVoices();
+    u.voice = v.find(x => /daniel|arthur|george|british/i.test(x.name))
+           || v.find(x => x.lang === 'en-GB') || v[0];
+    u.rate = 1.05; u.pitch = 0.95;
+    document.body.classList.add('speaking');
+    const done = () => { document.body.classList.remove('speaking'); resolve(); };
+    u.onend = done; u.onerror = done;
+    speechSynthesis.speak(u);
+    // Safety net: some browsers never fire onend for long strings.
+    setTimeout(() => { if (speechSynthesis.speaking) return; done(); },
+               Math.min(30000, 900 + text.length * 70));
   });
+}
+
+async function speak(text){
+  text = (text||'').trim();
+  if (muted || !text) return;
+  suppress = true;                                    // go deaf before audio starts
+  const spoken = text.length > 700 ? text.slice(0, 680).replace(/\s+\S*$/,'') + '…' : text;
+
+  if (RT.tts && !ttsDown){
+    try {
+      const r = await fetch('/api/speak', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({text: spoken})});
+      if (!r.ok){
+        // read the reason instead of throwing it away
+        let why = `HTTP ${r.status}`;
+        try { why = (await r.json()).error || why; } catch(_){}
+        throw new Error(why);
+      }
+      const url = URL.createObjectURL(await r.blob());
+      if (player) player.pause();
+      player = new Audio(url);
+      document.body.classList.add('speaking');
+      await new Promise((res, rej) => {
+        player.onended = () => { URL.revokeObjectURL(url); res(); };
+        player.onerror = () => { URL.revokeObjectURL(url); rej(new Error('playback failed')); };
+        player.play().catch(rej);                     // autoplay block lands here
+      });
+      document.body.classList.remove('speaking');
+      return;
+    } catch (e){
+      const why = String(e.message || e);
+      const quota = /quota|401|429|unusual activity|exceed/i.test(why);
+      if (quota){
+        ttsDown = true;                               // stop retrying every turn
+        sys('voice', 'quota spent', 'warn');
+        $('#p-voice').textContent = 'Voice: ElevenLabs quota spent — browser voice';
+        log('error','VOICE', `ElevenLabs out of characters — switching to the browser voice. (${why.slice(0,90)})`);
+      } else {
+        log('error','VOICE', `ElevenLabs failed (${why.slice(0,90)}) — using browser voice.`);
+      }
+      document.body.classList.remove('speaking');
+    }
+  }
+
+  await browserSpeak(spoken);                         // always say something
 }
 
 // ── start / stop the whole conversation ──
