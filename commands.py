@@ -105,8 +105,18 @@ def take_finished():
 
 
 # ─────────────────────────── dispatch ───────────────────────────
-_CMD = re.compile(r"^\s*/(new|profile|goal|personality|kanban|background)\b\s*(.*)$",
-                  re.I | re.S)
+_CMD = re.compile(
+    r"^\s*/(new|profile|goal|personality|kanban|background|tools|commands)\b\s*(.*)$",
+    re.I | re.S)
+
+COMMAND_LIST = (
+    "/new — fresh thread. "
+    "/profile — remember a fact about you. "
+    "/goal — set your standing objective. "
+    "/personality — change my tone. "
+    "/kanban — your work queue. "
+    "/background — run a mission while you carry on. "
+    "/tools — what I'm connected to.")
 
 
 def handle(message, runner=None):
@@ -178,6 +188,15 @@ def handle(message, runner=None):
                             "voice. Do not add commentary:\n"
                             + "\n".join(f"- {t}" for t in open_t),
                     note=f"queue read ({len(open_t)})")
+
+    if cmd == "commands":
+        return dict(message=None, reply=COMMAND_LIST, note="commands listed")
+
+    if cmd == "tools":
+        return dict(message="List what tools and connectors you currently have, "
+                            "grouped simply. Two short sentences maximum — this is "
+                            "spoken aloud, so no lists or markdown.",
+                    note="tool status")
 
     if cmd == "background":
         if not arg:

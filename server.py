@@ -177,8 +177,6 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             for ev in runtime.run(message, SESSION["id"], system):
-                # only remember a real claude session — never "demo"/"mock",
-                # or the next real run sends --resume demo and claude refuses
                 sid = ev.get("session_id")
                 # Only remember a session that actually COMPLETED. Storing it from
                 # `status` (which fires at init) means one broken run poisons every

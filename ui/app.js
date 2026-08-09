@@ -112,6 +112,7 @@ function handle(ev){
   switch (ev.t){
     case 'status':
       if (ev.session_id) sys('session', ev.session_id.slice(0,8));
+      if (ev.mcp) setChips(ev.mcp);
       log('status', 'STATUS',
           `core online · tools=${ev.tools} `
           + `mcp=[${(ev.mcp||[]).join(', ')||'—'}] permission=${ev.permission}`);
@@ -357,9 +358,23 @@ const TIPS = {
   '/profile':'Tell Jarvis about you — it saves it for every future run.',
   '/background':'Say a mission, e.g. “research competitors and save a report”.',
   '/personality':'Set the persona, e.g. “dry, brief, British butler”.',
-  '/kanban':'Ask about the work queue, e.g. “what’s on my board today?”.'
+  '/kanban':'Say a task to queue it, or transmit alone to hear the queue.',
+  '/tools':'Transmit alone to hear which tools and connectors are live.',
+  '/commands':'Transmit alone for the full command list.'
 };
 let defaultTip = '';
+
+// ── connected-tools chips (filled from the first run's STATUS event) ──
+function setChips(list){
+  const box = $('#chips');
+  if (!list || !list.length){
+    box.innerHTML = '<span class="chip muted">no connectors loaded</span>';
+    return;
+  }
+  box.innerHTML = list.map(n =>
+    `<span class="chip on">${esc(String(n).replace(/^claude\.ai /,'').replace(/^plugin:/,''))}</span>`
+  ).join('');
+}
 
 // ══════════ controls ══════════
 function sendFromInput(){
@@ -380,6 +395,26 @@ $('#mute').onclick = () => {
 };
 $('#input').addEventListener('keydown', e => {
   if (e.key==='Enter' && (e.metaKey||e.ctrlKey)){ e.preventDefault(); sendFromInput(); }
+});
+$('#cmds2').onclick = () => transmit('/commands');
+$('#clear').onclick = () => {
+  $('#input').value = ''; disarm(); $('#tip').textContent = defaultTip;
+  $('#response').innerHTML = '<span class="ph">Standing by. Transmit an instruction.</span>';
+  setTag('', 'IDLE'); setState('', 'STANDBY', 'awaiting uplink');
+};
+
+// ── mission controls ──
+document.querySelector('.mctl').addEventListener('click', e => {
+  const b = e.target.closest('.mbtn'); if (!b) return;
+  switch (b.dataset.mc){
+    case 'status':
+      log('status','STATUS', `voice=${RT.tts?'elevenlabs':'off'} · `
+        + `session=${$('#sy-session').textContent} · uplink=${now()}`);
+      break;
+    case 'tools':  transmit('/tools'); break;
+    case 'queue':  transmit('/kanban'); break;
+    case 'wipe':   $('#log').innerHTML = ''; log('note','LOG','cleared'); break;
+  }
 });
 
 // ══════════ system panel ══════════
@@ -408,19 +443,28 @@ setInterval(async () => {
     const s = await fetch('/api/status').then(r=>r.json());
     RT.tts = s.tts==='elevenlabs'; RT.stt = s.stt==='elevenlabs';
 
-    sys('gw', 'online · :8730', 'ok');
+    const port = location.port || '80';
+    sys('gw', `online · :${port}`, 'ok');
     sys('brain', 'JARVIS Core', 'ok');
     sys('voice', RT.tts ? 'ElevenLabs' : 'off', RT.tts ? '' : 'warn');
     sys('profile', 'default');
     sys('session', s.session ? s.session.slice(0,8) : 'none');
     sys('clock', now());
 
+    // header pills
+    $('#p-gw').textContent = `Gateway: online ${location.origin}`;
+    $('#p-voice').textContent = RT.tts
+      ? 'Voice: ElevenLabs STT / ElevenLabs TTS' : 'Voice: unavailable';
+    if (!RT.tts) $('#p-voice').previousElementSibling?.classList.replace('am','bad');
+
     log('status', 'BOOT',
         `gateway online · core ready · permission=${s.permission}`);
-    log('voice', 'VOICE', `channel ready — ElevenLabs STT/TTS`);
+    log('voice', 'VOICE', `channel ready — ElevenLabs STT / ElevenLabs TTS`);
     setState('', 'STANDBY', 'awaiting uplink');
   } catch(e){
     sys('gw','offline','warn');
+    $('#p-gw').textContent = 'Gateway: offline';
+    $('#p-gw-dot').classList.replace('ok','bad');
     log('error','STATUS','server unreachable');
   }
 })();

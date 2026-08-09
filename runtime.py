@@ -18,8 +18,8 @@ import shutil
 import subprocess
 import time
 
-# claude session ids are UUIDs — anything else (like "demo"/"mock") must never
-# reach --resume, or the CLI refuses to start.
+# Session ids are UUIDs — anything else must never reach --resume, or the CLI
+# refuses to start.
 _UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
 
 
@@ -31,7 +31,6 @@ WORKDIR = os.path.expanduser(os.environ.get("JARVIS_WORKDIR", "~"))
 # default|bypass|accept|plan — bypass lets the assistant use tools without a
 # prompt, which is what makes connectors work headlessly. Loud in the banner.
 PERMISSION = os.environ.get("JARVIS_PERMISSION", "bypass").strip().lower()
-RUNTIME = os.environ.get("JARVIS_RUNTIME", "auto").strip().lower()  # auto|claude|mock
 
 
 def _mono_ms():
@@ -39,11 +38,8 @@ def _mono_ms():
 
 
 def runtime_kind():
-    if RUNTIME == "mock":
-        return "mock"
-    if RUNTIME == "claude":
-        return "claude"
-    return "claude" if shutil.which("claude") else "mock"
+    """"claude" when the CLI is reachable, "offline" when it isn't."""
+    return "claude" if shutil.which("claude") else "offline"
 
 
 # JARVIS_MCP controls which connectors load:
@@ -73,7 +69,7 @@ def build_command(message, session_id=None, system=None):
     cmd += _mcp_flags()
     if MODEL:
         cmd += ["--model", MODEL]
-    if valid_session(session_id):              # never pass "demo"/"mock"/garbage
+    if valid_session(session_id):              # never pass a non-UUID
         cmd += ["--resume", session_id]
     if system:
         cmd += ["--append-system-prompt", system]
@@ -260,8 +256,7 @@ def _short(obj, limit=120):
 
 # ─────────────────────────── public entry ───────────────────────────
 def run(message, session_id=None, system=None):
-    """Yields events. The three hot demo questions get a fixed scripted answer;
-    everything else goes to the real Claude Code brain (mock if unreachable)."""
+    """Yields events from a real Claude Code run. Nothing here is scripted."""
     if not shutil.which("claude"):
         yield dict(t="error",
                    message="Claude Code isn't installed or isn't on PATH. "
