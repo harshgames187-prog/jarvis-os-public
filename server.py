@@ -43,6 +43,7 @@ _PERSONA_FILE = ROOT / "persona.md"
 def persona():
     try:
         base = _PERSONA_FILE.read_text(encoding="utf-8").strip()
+        base = base.replace("{TOOLS}", str(ROOT / "tools"))
     except OSError:
         base = ""
     extra = commands.context_block()      # profile / goal / personality / queue
@@ -59,6 +60,18 @@ class Handler(BaseHTTPRequestHandler):
             sys.stderr.write("  " + (fmt % args) + "\n")
 
     # ── helpers ──────────────────────────────────────────────
+    def _local(self):
+        """True when the request comes from this HUD's own page.
+
+        Without this, any website open in the browser could POST to
+        localhost and run the assistant — with permission prompts off.
+        """
+        ok = {f"localhost:{PORT}", f"127.0.0.1:{PORT}"}
+        origin = self.headers.get("Origin")
+        if self.headers.get("Host") not in ok:
+            return False
+        return origin is None or urlparse(origin).netloc in ok
+
     def _json(self, body, code=200):
         data = json.dumps(body).encode()
         self.send_response(code)
@@ -83,6 +96,10 @@ class Handler(BaseHTTPRequestHandler):
     # ── GET ──────────────────────────────────────────────────
     def do_GET(self):
         p = urlparse(self.path).path
+        if not self._local():
+            return self._json({"error": "forbidden"}, 403)
+        if p == "/api/voices":
+            return self._json({"voices": voice.voices()})
         if p == "/api/status":
             return self._json(dict(
                 runtime=runtime.runtime_kind(),
@@ -108,6 +125,8 @@ class Handler(BaseHTTPRequestHandler):
     # ── POST ─────────────────────────────────────────────────
     def do_POST(self):
         p = urlparse(self.path).path
+        if not self._local():
+            return self._json({"error": "forbidden"}, 403)
         raw = self._read()
 
         if p == "/api/speak":
@@ -120,6 +139,10 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/listen":
             try:
                 mime = self.headers.get("Content-Type", "audio/webm")
+                if os.environ.get("JARVIS_DEBUG") == "1":
+                    # keep the last clip so "nothing transcribed" can be checked by ear
+                    with open("/tmp/jarvis-last-audio", "wb") as f:
+                        f.write(raw)
                 return self._json({"text": voice.transcribe(raw, mime)})
             except Exception as e:                        # noqa: BLE001
                 return self._json({"error": str(e)[:300], "text": ""}, 503)
@@ -198,7 +221,7 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     kind = runtime.runtime_kind()
     brain = ("Claude Code (your subscription — connectors & skills live)"
-             if kind == "claude" else "MOCK — claude not reachable, scripted replies")
+             if kind == "claude" else "OFFLINE — claude CLI not found; runs will report an error")
     vo = (f"ElevenLabs · {voice.voice_id()[:8]}…" if voice.available()
           else "none (add ELEVENLABS_API_KEY for voice)")
     perm = runtime.PERMISSION

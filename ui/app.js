@@ -254,9 +254,24 @@ async function speak(text){
 async function micToggle(){
   if (convo){ stopConvo(); return; }
   if (!RT.stt){ log('error','VOICE','no ElevenLabs key — set one in .env'); return; }
+  const opts = {echoCancellation:true, noiseSuppression:true, autoGainControl:true};
   try {
-    micStream = await navigator.mediaDevices.getUserMedia(
-      {audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true}});
+    micStream = await navigator.mediaDevices.getUserMedia({audio:opts});
+    // The browser's default mic is often not the one you're talking into.
+    // Open with ?mic=<part of its name> once; the choice is remembered.
+    const want = new URLSearchParams(location.search).get('mic');
+    try { if (want !== null) localStorage.setItem('jarvis.mic', want); } catch(_){}
+    let pref = want; try { pref = pref ?? localStorage.getItem('jarvis.mic'); } catch(_){}
+    const mics = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind==='audioinput');
+    const pick = pref && mics.find(d => d.label.toLowerCase().includes(pref.toLowerCase()));
+    if (pick){
+      micStream.getTracks().forEach(t=>t.stop());
+      micStream = await navigator.mediaDevices.getUserMedia({audio:{...opts, deviceId:{exact:pick.deviceId}}});
+    } else if (pref){
+      log('error','VOICE',`no mic matching "${pref}" — using the default`);
+    }
+    log('voice','VOICE',`mic in use: ${micStream.getAudioTracks()[0]?.label || 'unknown'}`);
+    log('voice','VOICE',`mics available: ${mics.map(d=>d.label).join(' · ')}`);
   } catch(e){ log('error','VOICE','mic blocked — allow it in the address bar'); return; }
   actx = new (window.AudioContext||window.webkitAudioContext)();
   await actx.resume();

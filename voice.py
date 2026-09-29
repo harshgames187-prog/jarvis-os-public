@@ -9,6 +9,7 @@ page source, or a screen recording.
 """
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 
@@ -65,6 +66,12 @@ def speak(text):
         raise RuntimeError(f"{e.code} {body}") from None
 
 
+def _clean(text):
+    """Drop sound tags like "[background noise]" or "(music)". A turn that was
+    only noise comes back empty, so the HUD re-listens instead of sending it."""
+    return re.sub(r"\[[^\]]*\]|\([^)]*\)", "", text).strip()
+
+
 def transcribe(audio, mime="audio/webm"):
     """Speech to text via ElevenLabs Scribe. Returns the transcript, or raises.
 
@@ -86,6 +93,8 @@ def transcribe(audio, mime="audio/webm"):
         b"--", b, b"\r\n",
         b'Content-Disposition: form-data; name="model_id"\r\n\r\nscribe_v1\r\n',
         b"--", b, b"\r\n",
+        b'Content-Disposition: form-data; name="tag_audio_events"\r\n\r\nfalse\r\n',
+        b"--", b, b"\r\n",
         f'Content-Disposition: form-data; name="file"; filename="turn.{ext}"\r\n'.encode(),
         f"Content-Type: {mime}\r\n\r\n".encode(),
         audio, b"\r\n",
@@ -101,7 +110,7 @@ def transcribe(audio, mime="audio/webm"):
         },
     )
     with urllib.request.urlopen(req, timeout=45) as r:
-        return (json.loads(r.read()).get("text") or "").strip()
+        return _clean(json.loads(r.read()).get("text") or "")
 
 
 def voices():

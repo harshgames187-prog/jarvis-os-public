@@ -68,6 +68,11 @@ its own voice through your speakers and talks to itself forever.
 
 You can also type in the uplink box (⌘↵ to send).
 
+**Wrong microphone?** The browser's default mic is often not the one you talk
+into. Open `http://localhost:8730/?mic=<part of the mic's name>` once (for
+example `?mic=usb`); the choice is remembered. The Action Log shows which mic
+is in use and lists the others.
+
 ---
 
 ## The command matrix
@@ -103,6 +108,31 @@ which ones loaded.
 
 ---
 
+## Lead tools (optional)
+
+`tools/` holds two scripts the assistant knows about, so you can say "find me
+200 dentist leads in the US and Canada and put them in a Google Sheet".
+
+| Script | What it does |
+|---|---|
+| `leads.py dentist 100` | Real business listings from OpenStreetMap for US and Canadian cities, kept only if the website is live. Saves `leads.json` and `leads.xlsx`. |
+| `competitor_pricing.py URL` | Plan names and prices on a page, as seen from the US, Germany, India and Brazil. |
+
+```bash
+pip install -r tools/requirements.txt
+```
+
+Sites decide what to show you from your IP address, so without a proxy every
+"country" is just your own location. To see what a local visitor sees, copy
+`tools/.env.local.example` to `tools/.env.local` and add residential proxy
+credentials. The sheet records where each request really exited.
+
+Know the limits: listings come from public map data, so there are no ratings
+and coverage varies by city; the public map servers are often slow; and the
+pricing script reads plain HTML, so prices drawn by JavaScript are missed.
+
+---
+
 ## The permission trade-off — read this
 
 By default this runs Claude with `--dangerously-skip-permissions`
@@ -118,6 +148,10 @@ and in whatever skills you install — not in a per-action prompt.
 
 Set `JARVIS_PERMISSION=default` to require approval, and accept that tool calls
 won't complete headlessly.
+
+The server listens on `127.0.0.1` only and refuses requests that don't come
+from its own page, so another website open in your browser can't send it
+commands. Don't put it behind a tunnel or reverse proxy.
 
 ---
 
@@ -138,6 +172,14 @@ confirm, then authorize the offending server with `claude` → `/mcp`.
 **"core went quiet".** The watchdog stopped a run that produced nothing for
 `JARVIS_TIMEOUT` seconds. The error includes Claude's stderr.
 
+**"Port … is already in use".** Something else holds the port. Stop it, or
+set `JARVIS_PORT` in `.env`.
+
+**It says "nothing transcribed" while you talk.** It is probably listening on
+the wrong microphone — see *Wrong microphone?* above. Start with
+`JARVIS_DEBUG=1 ./start.sh` to keep the last clip at `/tmp/jarvis-last-audio`
+and hear what it heard.
+
 **The mic hears nothing.** The reactor shows a live `IN ▮▮▮▯▯` meter while
 listening. If the bars don't move, it's mic permission, not the app.
 
@@ -152,6 +194,7 @@ jarvis-os/
 ├── voice.py      ElevenLabs speech-to-text + text-to-speech
 ├── commands.py   the six command-matrix buttons + state
 ├── persona.md    how it talks — edit this
+├── tools/        optional lead and pricing scripts
 ├── ui/           the HUD: index.html, styles.css, app.js
 └── start.sh
 ```
